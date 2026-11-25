@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Top Games Vote</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#eef0fb;--card:#fff;--ink:#1d1b3a;--mut:#6b6a85;--pri:#3b2fd6;--hot:#ff5a5f;--line:#d9dbf0}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 Inter,system-ui,sans-serif}
+h1,h2,h3,.rank{font-family:"Chakra Petch",Inter,sans-serif}
+header{background:var(--pri);color:#fff;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;gap:10px}
+header h1{margin:0;font-size:1.25rem}
+header span{font-size:.85rem;opacity:.9}
+main{max-width:720px;margin:0 auto;padding:18px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:16px}
+input,select{width:100%;padding:11px;margin:6px 0 12px;border:1px solid var(--line);border-radius:8px;font:inherit}
+button{font:inherit;font-weight:500;border:0;border-radius:8px;padding:10px 16px;background:var(--pri);color:#fff;cursor:pointer}
+button.ghost{background:transparent;color:var(--pri);border:1px solid var(--pri)}
+button.danger{background:var(--hot)}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--hot);outline-offset:2px}
+.tabs{display:flex;gap:8px;margin-bottom:14px}
+.tabs button{flex:1}
+.game{display:grid;grid-template-columns:44px 1fr auto;gap:12px;align-items:center;padding:12px 0;border-bottom:1px solid var(--line)}
+.game:last-child{border:0}
+.rank{font-size:1.5rem;font-weight:700;color:var(--pri);text-align:center}
+.game:first-child .rank{color:var(--hot)}
+.bar{height:8px;background:var(--bg);border-radius:4px;margin-top:6px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--pri);transition:width .4s}
+.meta{color:var(--mut);font-size:.85rem}
+.voted{background:var(--hot)}
+.err{color:var(--hot);min-height:1.4em;font-size:.9rem}
+.row{display:flex;gap:8px}.row>*{flex:1}
+table{width:100%;border-collapse:collapse;font-size:.9rem}
+td,th{text-align:left;padding:6px 4px;border-bottom:1px solid var(--line)}
+.hide{display:none}
+</style>
+</head>
+<body>
+<!--
+SETUP (see README steps in chat):
+1. Create Firebase project -> add Web app -> paste config below.
+2. Enable Authentication > Email/Password.
+3. Create Firestore database, then paste the rules at the bottom of this file into Firestore > Rules.
+4. Set ADMIN_EMAIL, register with that email -> you get the Admin panel.
+-->
+<header><h1>Top Games Vote</h1><span id="who"></span></header>
+<main>
+  <!-- LOGIN / REGISTER -->
+  <section id="auth" class="card hide">
+    <div class="tabs">
+      <button id="tabLogin" type="button">Log in</button>
+      <button id="tabReg" type="button" class="ghost">Register</button>
+    </div>
+    <div id="nameWrap" class="hide"><label>Full name<input id="name" autocomplete="name"></label></div>
+    <label>Email<input id="email" type="email" autocomplete="email"></label>
+    <label>Password<input id="pass" type="password" autocomplete="current-password"></label>
+    <div id="passWrap" class="hide"><label>Confirm password<input id="pass2" type="password"></label></div>
+    <div class="err" id="authErr"></div>
+    <button id="authBtn" type="button" style="width:100%">Log in</button>
+  </section>
+
+  <!-- VOTING -->
+  <section id="app" class="hide">
+    <div class="card">
+      <div class="row" style="align-items:center">
+        <h2 style="margin:0;flex:3">Vote for the top game</h2>
+        <button id="logout" type="button" class="ghost">Log out</button>
+      </div>
+      <p class="meta" id="myVote">You have one vote. You can change it anytime.</p>
+      <div id="list"></div>
+    </div>
+
+    <div id="admin" class="card hide">
+      <h2 style="margin-top:0">Admin panel</h2>
+      <div class="row">
+        <input id="gName" placeholder="Game name">
+        <input id="gGenre" placeholder="Genre (e.g. MOBA)">
+      </div>
+      <div class="row">
+        <button id="addGame" type="button">Add game</button>
+        <button id="seed" type="button" class="ghost">Add default games</button>
+      </div>
+      <h3>Voters</h3>
+      <table><thead><tr><th>Name</th><th>Email</th><th>Voted for</th></tr></thead><tbody id="voters"></tbody></table>
+      <p><button id="reset" type="button" class="danger">Reset all votes</button></p>
+    </div>
+  </section>
+</main>
+
+<script type="module">
+import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {getAuth,createUserWithEmailAndPassword,signInWithEmailAndPassword,signOut,onAuthStateChanged,updateProfile} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import {getFirestore,collection,doc,setDoc,addDoc,deleteDoc,onSnapshot,runTransaction,increment,writeBatch,getDocs,serverTimestamp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+// ====== EDIT THESE ======
+const firebaseConfig = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT.firebaseapp.com",
+  projectId: "YOUR_PROJECT_ID",
+  appId: "YOUR_APP_ID"
+};
+const ADMIN_EMAIL = "admin@example.com";
+// ========================
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app), db = getFirestore(app);
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+let mode = "login", user = null, isAdmin = false, games = [], myVoteId = null, unsubs = [];
+
+// ---- auth UI ----
+function setMode(m){
+  mode = m;
+  const reg = m === "register";
+  $("nameWrap").classList.toggle("hide", !reg);
+  $("passWrap").classList.toggle("hide", !reg);
+  $("authBtn").textContent = reg ? "Create account" : "Log in";
+  $("tabLogin").className = reg ? "ghost" : "";
+  $("tabReg").className = reg ? "" : "ghost";
+  $("authErr").textContent = "";
+}
+$("tabLogin").onclick = () => setMode("login");
+$("tabReg").onclick = () => setMode("register");
+
+$("authBtn").onclick = async () => {
+  const email = $("email").value.trim(), pass = $("pass").value, err = $("authErr");
+  err.textContent = "";
+  try {
+    if (mode === "register") {
+      const name = $("name").value.trim();
+      if (!name) return err.textContent = "Enter your full name.";
+      if (pass.length < 6) return err.textContent = "Password must be at least 6 characters.";
+      if (pass !== $("pass2").value) return err.textContent = "Passwords do not match.";
+      const cred = await createUserWithEmailAndPassword(auth, email, pass);
+      await updateProfile(cred.user, {displayName: name});
+      await setDoc(doc(db, "users", cred.user.uid), {name, email, role: email === ADMIN_EMAIL ? "admin" : "voter", createdAt: serverTimestamp()});
+    } else {
+      await signInWithEmailAndPassword(auth, email, pass);
+    }
+  } catch (e) {
+    err.textContent = e.code === "auth/email-already-in-use" ? "That email is already registered. Log in instead."
+      : e.code === "auth/invalid-credential" ? "Wrong email or password."
+      : e.message;
+  }
+};
+$("logout").onclick = () => signOut(auth);
+
+onAuthStateChanged(auth, u => {
+  unsubs.forEach(f => f()); unsubs = [];
+  user = u;
+  $("auth").classList.toggle("hide", !!u);
+  $("app").classList.toggle("hide", !u);
+  if (!u) { $("who").textContent = ""; return; }
+  isAdmin = u.email === ADMIN_EMAIL;
+  $("who").textContent = (u.displayName || u.email) + (isAdmin ? " (admin)" : "");
+  $("admin").classList.toggle("hide", !isAdmin);
+  unsubs.push(onSnapshot(collection(db, "games"), s => {
+    games = s.docs.map(d => ({id: d.id, ...d.data()})).sort((a, b) => b.votes - a.votes || a.name.localeCompare(b.name));
+    render();
+  }));
+  unsubs.push(onSnapshot(doc(db, "votes", u.uid), s => {
+    myVoteId = s.exists() ? s.data().gameId : null;
+    render();
+  }));
+  if (isAdmin) unsubs.push(onSnapshot(collection(db, "votes"), s => {
+    $("voters").innerHTML = s.docs.map(d => { const v = d.data();
+      return `<tr><td>${esc(v.name)}</td><td>${esc(v.email)}</td><td>${esc(v.gameName)}</td></tr>`; }).join("")
+      || `<tr><td colspan="3" class="meta">No votes yet.</td></tr>`;
+  }));
+});
+
+// ---- voting list ----
+function render(){
+  const total = games.reduce((n, g) => n + g.votes, 0) || 1;
+  const mine = games.find(g => g.id === myVoteId);
+  $("myVote").textContent = mine ? `Your vote: ${mine.name}. You can change it anytime.` : "You have one vote. You can change it anytime.";
+  $("list").innerHTML = games.length ? games.map((g, i) => `
+    <div class="game">
+      <div class="rank">${i + 1}</div>
+      <div>
+        <strong>${esc(g.name)}</strong> <span class="meta">${esc(g.genre || "")}</span>
+        <div class="bar"><i style="width:${Math.round(g.votes / total * 100)}%"></i></div>
+        <span class="meta">${g.votes} vote${g.votes === 1 ? "" : "s"}</span>
+      </div>
+      <div>
+        <button type="button" data-vote="${g.id}" class="${g.id === myVoteId ? "voted" : ""}">${g.id === myVoteId ? "Voted" : "Vote"}</button>
+        ${isAdmin ? `<button type="button" class="danger" data-del="${g.id}" aria-label="Delete ${esc(g.name)}">X</button>` : ""}
+      </div>
+    </div>`).join("") : `<p class="meta">No games yet. ${isAdmin ? "Add one in the admin panel." : "Ask the admin to add games."}</p>`;
+}
+
+$("list").onclick = async e => {
+  const v = e.target.dataset.vote, d = e.target.dataset.del;
+  if (v) castVote(v);
+  if (d && confirm("Delete this game?")) await deleteDoc(doc(db, "games", d));
+};
+
+async function castVote(gameId){
+  const vref = doc(db, "votes", user.uid), nref = doc(db, "games", gameId);
+  try {
+    await runTransaction(db, async tx => {
+      const vs = await tx.get(vref);
+      const old = vs.exists() ? vs.data().gameId : null;
+      if (old === gameId) return;
+      const oldSnap = old ? await tx.get(doc(db, "games", old)) : null;
+      const newSnap = await tx.get(nref);
+      if (!newSnap.exists()) throw new Error("This game was removed.");
+      if (oldSnap && oldSnap.exists()) tx.update(oldSnap.ref, {votes: increment(-1)});
+      tx.update(nref, {votes: increment(1)});
+      tx.set(vref, {gameId, gameName: newSnap.data().name, name: user.displayName || "", email: user.email, at: serverTimestamp()});
+    });
+  } catch (e) { alert(e.message); }
+}
+
+// ---- admin ----
+$("addGame").onclick = async () => {
+  const name = $("gName").value.trim();
+  if (!name) return alert("Enter a game name.");
+  await addDoc(collection(db, "games"), {name, genre: $("gGenre").value.trim(), votes: 0});
+  $("gName").value = ""; $("gGenre").value = "";
+};
+$("seed").onclick = async () => {
+  const defaults = [["Mobile Legends: Bang Bang","MOBA"],["Clash of Clans","Strategy"],["Call of Duty: Mobile","FPS"],["Valorant","FPS"],["Genshin Impact","RPG"],["Roblox","Sandbox"],["Minecraft","Sandbox"],["PUBG Mobile","Battle royale"],["Free Fire","Battle royale"],["League of Legends: Wild Rift","MOBA"]];
+  const have = new Set(games.map(g => g.name));
+  const b = writeBatch(db);
+  defaults.filter(([n]) => !have.has(n)).forEach(([name, genre]) => b.set(doc(collection(db, "games")), {name, genre, votes: 0}));
+  await b.commit();
+};
+$("reset").onclick = async () => {
+  if (!confirm("Reset every vote to zero?")) return;
+  const b = writeBatch(db);
+  (await getDocs(collection(db, "games"))).forEach(d => b.update(d.ref, {votes: 0}));
+  (await getDocs(collection(db, "votes"))).forEach(d => b.delete(d.ref));
+  await b.commit();
+};
+setMode("login");
+</script>
+
+<!--
+FIRESTORE RULES (paste in Firebase console > Firestore > Rules; change the admin email):
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isAdmin() { return request.auth != null && request.auth.token.email == "admin@example.com"; }
+    match /users/{uid}  { allow read: if request.auth != null && (request.auth.uid == uid || isAdmin());
+                          allow create: if request.auth.uid == uid; }
+    match /games/{id}   { allow read: if request.auth != null;
+                          allow create, delete: if isAdmin();
+                          allow update: if request.auth != null; }
+    match /votes/{uid}  { allow read: if request.auth != null && (request.auth.uid == uid || isAdmin());
+                          allow write: if request.auth.uid == uid || isAdmin(); }
+  }
+}
+-->
+</body>
+</html>
