@@ -97,10 +97,10 @@ import {getFirestore,collection,doc,setDoc,addDoc,deleteDoc,onSnapshot,runTransa
 
 // ====== EDIT THESE ======
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSy...",
+  authDomain: "games-vote-xxxx.firebaseapp.com",
+  projectId: "games-vote-xxxx",
+  appId: "1:123456:web:abc123"
 };
 const ADMIN_EMAIL = "admin@example.com";
 // ========================
@@ -245,7 +245,7 @@ FIRESTORE RULES (paste in Firebase console > Firestore > Rules; change the admin
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    function isAdmin() { return request.auth != null && request.auth.token.email == "admin@example.com"; }
+    function isAdmin() { return request.auth != null && request.auth.token.email == "asicarnategabriel27@gmail.com"; }
     match /users/{uid}  { allow read: if request.auth != null && (request.auth.uid == uid || isAdmin());
                           allow create: if request.auth.uid == uid; }
     match /games/{id}   { allow read: if request.auth != null;
